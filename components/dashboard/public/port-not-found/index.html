@@ -66,8 +66,9 @@
             <h3>Nothing to see here... 🦗</h3>
             <h2>Port <span id="port"></span> didn't respond</h2>
             <p style="margin-top: 60px;">Please make sure this port is exposed and your app is running.</p>
+            <p>This page retries to access the port every 5 seconds.</p>
             <button id="refresh" tabindex="0" type="button">
-              <span>Try again</span>
+              <span>Retry now</span>
             </button>
         </div>
       </div>
@@ -80,6 +81,9 @@
       document.getElementById('refresh').addEventListener('click', function () {
         window.location.reload(true);
       });
+      setTimeout(function(){
+        window.location.reload(true);
+      }, 5000);
     </script>
   </body>
 </html>
