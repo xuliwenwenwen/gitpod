@@ -32,7 +32,8 @@ export interface PortChangeEvent {
 export interface PortRange {
     start: number
     end: number
-    onOpen?: PortOnOpen
+    onOpen?: PortOnOpen;
+    visibility?: PortVisibility;
 }
 export namespace PortRange {
     export function parse(config: PortRangeConfig): PortRange | undefined {

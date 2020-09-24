@@ -107,14 +107,9 @@ export class GitpodPortViewContribution extends AbstractViewContribution<GitpodP
             if (!config) {
                 const range = this.portsService.findPortRange(port);
                 if (range) {
-                    config = { port, onOpen: range.onOpen };
-                    // We don't automatically expose entire port ranges when onOpen is 'ignore',
-                    // because that's probably not what users expect.
-                    // However, these ports can still be access via localhost:<port>, or be exposed
-                    // manually via the 'Open Ports' view.
-                    if (config.onOpen !== 'ignore') {
-                        await this.portsService.openPort(config);
-                    }
+                    config = { port, onOpen: range.onOpen, visibility: range.visibility };
+                    isPersisted = true;
+                    await this.portsService.openPort(config);
                 }
             }
             if (config && isPersisted) {

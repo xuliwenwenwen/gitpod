@@ -642,6 +642,7 @@ export namespace PortConfig {
 export interface PortRangeConfig {
     port: string;
     onOpen?: PortOnOpen;
+    visibility?: PortVisibility;
 }
 export namespace PortRangeConfig {
     export function is(config: any): config is PortRangeConfig {

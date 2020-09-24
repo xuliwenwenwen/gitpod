@@ -186,8 +186,8 @@ class GitpodPortViewComponent extends React.Component<GitpodPortViewProps, Gitpo
             }
         } else {
             if (port.served == 'globally') {
-                // This is an intermediate state now as we auto-open ports
-                label = 'detecting...';
+                // ports in a configured port range with onOpen=ignore are never exposed
+                label = 'not exposed';
             } else if (port.served == 'locally') {
                 label = 'served on localhost only, thus cannot be exposed';
             }
