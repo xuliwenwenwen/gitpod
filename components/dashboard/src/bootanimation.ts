@@ -26,6 +26,7 @@ export class Bootanimation {
     };
     protected buffers: { position: WebGLBuffer | null; normals: WebGLBuffer | null; indices: WebGLBuffer | null; };
     protected inErrorMode: boolean = false;
+    protected isStopped: boolean = false;
 
     protected projectionMatrix = new mat4();
     protected modelViewMatrix = new mat4();
@@ -207,7 +208,9 @@ export class Bootanimation {
             const deltaTime = now - then;
             then = now;
 
-            setTimeout(() => { requestAnimationFrame(render); }, 1000 / 30 );
+            if (!this.isStopped) {
+                setTimeout(() => { requestAnimationFrame(render); }, 1000 / 30);
+            }
             this.render(now, deltaTime);
         };
         requestAnimationFrame(render);
@@ -218,6 +221,10 @@ export class Bootanimation {
         this.addEventListener('mouseup', () => this.isMouseDown = false);
         this.addEventListener('resize', () => this.onResize());
         this.onResize();
+    }
+
+    stop() {
+        this.isStopped = true;
     }
 
     protected updateMousePosition(evt: MouseEvent) {
