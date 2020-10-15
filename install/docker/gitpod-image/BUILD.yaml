@@ -6,6 +6,7 @@ packages:
       - gitpod-helm-installer.yaml
       - persistent-volumes.yaml
       - values.yaml
+      - chart-0.5.0
     deps:
       - chart:helm
     argdeps:
