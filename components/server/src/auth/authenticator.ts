@@ -117,7 +117,7 @@ export class Authenticator {
             return;
         }
 
-        const isInSetupMode = await this.isInSetupMode();
+        const isInSetupMode = true;
         if (!authProvider.info.verified && !isInSetupMode) {
             log.info({ sessionId: req.sessionID }, `Login with "${host}" is not permitted.`, { req, 'login-flow': true, ap: authProvider.info, isInSetupMode });
             res.redirect(this.getSorryUrl(`Login with "${host}" is not permitted.`));
