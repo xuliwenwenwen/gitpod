@@ -14,6 +14,14 @@ BASEDOMAIN=${BASEDOMAIN:-}
 DOMAIN=${DOMAIN:-}
 
 
+INSTALL_LATEST_FROM_CHARTS_GITPID_IO=${INSTALL_LATEST_FROM_CHARTS_GITPID_IO:-false}
+if [ "$INSTALL_LATEST_FROM_CHARTS_GITPID_IO" = "true" ]; then
+    # Remove local charts folder content
+    # When this folder has no content installing from charts.gitpod.io is the default.
+    rm -rf /chart/*
+fi
+
+
 mkdir -p /values
 
 
@@ -41,31 +49,20 @@ echo "BASEDOMAIN:           $BASEDOMAIN"
 [ -d "/var/gitpod/docker-registry" ] && chown 1000 /var/gitpod/docker-registry
 
 
+
 # Add IP tables rules to access Docker's internal DNS 127.0.0.11 from outside
 # based on https://serverfault.com/a/826424
+if iptables-save | grep -q '127.0.0.11'; then
+    TCP_DNS_ADDR=$(iptables-save | grep DOCKER_OUTPUT | grep tcp | grep -o '127\.0\.0\.11:.*$')
+    UDP_DNS_ADDR=$(iptables-save | grep DOCKER_OUTPUT | grep udp | grep -o '127\.0\.0\.11:.*$')
 
-TCP_DNS_ADDR=$(iptables-save | grep DOCKER_OUTPUT | grep tcp | grep -o '127\.0\.0\.11:.*$')
-UDP_DNS_ADDR=$(iptables-save | grep DOCKER_OUTPUT | grep udp | grep -o '127\.0\.0\.11:.*$')
+    iptables -t nat -A PREROUTING -p tcp --dport 53 -j DNAT --to "$TCP_DNS_ADDR"
+    iptables -t nat -A PREROUTING -p udp --dport 53 -j DNAT --to "$UDP_DNS_ADDR"
 
-iptables -t nat -A PREROUTING -p tcp --dport 53 -j DNAT --to "$TCP_DNS_ADDR"
-iptables -t nat -A PREROUTING -p udp --dport 53 -j DNAT --to "$UDP_DNS_ADDR"
-
-
-# Add this IP to resolv.conf since CoreDNS of k3s uses this file
-create_resolv_conf() {
-    TMP_FILE=$(mktemp)
-    echo "nameserver 127.0.0.11" > "$TMP_FILE"
-    echo "nameserver $(hostname -i | cut -f1 -d' ')" >> "$TMP_FILE"
-    additional_nameserver=${1:-}
-    if [ -n "$additional_nameserver" ]; then
-        echo "nameserver $additional_nameserver" >> "$TMP_FILE"
-    fi
-    echo "options ndots:0" >>  "$TMP_FILE"
-    cp "$TMP_FILE" /etc/resolv.conf
-    rm "$TMP_FILE"
-}
-create_resolv_conf
-
+    # Add this IP to resolv.conf since CoreDNS of k3s uses this file
+    echo "nameserver 127.0.0.11" >> /etc/resolv.conf
+    echo "nameserver $(hostname -i | cut -f1 -d' ')" >> /etc/resolv.conf
+fi
 
 
 
@@ -124,11 +121,11 @@ EOF
 
     # modify resolv.conf so that registry.default.svc.cluster.local can be resolved from the node
     KUBE_DNS_IP=$(kubectl -n kube-system get service kube-dns -o jsonpath='{.spec.clusterIP}')
-    create_resolv_conf "$KUBE_DNS_IP"
+    echo "nameserver $KUBE_DNS_IP" >> /etc/resolv.conf
 }
 
 
-case "$DOMAIN" in 
+case "$DOMAIN" in
   *ip.mygitpod.com)
     cat << EOF > /default_values/03_ip_mygitpod_com.yaml
 forceHTTPS: true
