@@ -42,7 +42,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: {{ template "gitpod.comp.configMap" $this }}
+          name: ws-proxy-config
 {{- if $.Values.certificatesSecret.secretName }}
       - name: config-certificates
         secret:
