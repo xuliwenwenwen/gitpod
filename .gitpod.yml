@@ -34,6 +34,7 @@ tasks:
   - name: Go
     init: leeway exec --filter-type go -v -- go get -v ./...
     openMode: split-right
+privileged: true
 vscode:
   extensions:
     - hangxingliu.vscode-nginx-conf-hint@0.1.0:UATTe2sTFfCYWQ3jw4IRsw==
