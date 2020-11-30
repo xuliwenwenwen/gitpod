@@ -10,7 +10,7 @@ import * as express from 'express';
 import { Authenticator } from "../auth/authenticator";
 import { Env } from "../env";
 import { WorkspaceDB } from "@gitpod/gitpod-db/lib/workspace-db";
-import { log } from '@gitpod/gitpod-protocol/lib/util/logging';
+import { log, LogContext } from '@gitpod/gitpod-protocol/lib/util/logging';
 import { GitpodCookie } from "../auth/gitpod-cookie";
 import { AuthorizationService } from "./authorization-service";
 import { Permission } from "@gitpod/gitpod-protocol/lib/permission";
@@ -20,9 +20,11 @@ import { parseWorkspaceIdFromHostname } from "@gitpod/gitpod-protocol/lib/util/p
 import { SessionHandlerProvider } from "../session-handler";
 import { URL } from 'url';
 import { saveSession, getRequestingClientInfo, destroySession } from "../express-util";
-import { Identity, User } from "@gitpod/gitpod-protocol";
+import { User } from "@gitpod/gitpod-protocol";
 import { HostContextProvider } from "../auth/host-context-provider";
-import { AuthBag } from "../auth/auth-provider";
+import { AuthFlow } from "../auth/auth-provider";
+import { VerifyResultWithIdentity, VerifyResultWithUser } from "../auth/generic-auth-provider";
+import { LoginCompletionHandler } from "../auth/login-completion-handler";
 
 @injectable()
 export class UserController {
@@ -36,6 +38,7 @@ export class UserController {
     @inject(WorkspacePortAuthorizationService) protected readonly workspacePortAuthService: WorkspacePortAuthorizationService;
     @inject(HostContextProvider) protected readonly hostContextProvider: HostContextProvider;
     @inject(SessionHandlerProvider) protected readonly sessionHandlerProvider: SessionHandlerProvider;
+    @inject(LoginCompletionHandler) protected readonly loginCompletionHandler: LoginCompletionHandler;
 
     get apiRouter(): express.Router {
         const router = express.Router();
@@ -83,29 +86,31 @@ export class UserController {
             this.authenticator.authorize(req, res, next);
         });
         const branding = this.env.brandingConfig;
-        router.get("/logout", (req: express.Request, res: express.Response, next: express.NextFunction) => {
-            let redirectToUrl = req.query.redirect || req.query.redirect;
-            redirectToUrl = redirectToUrl || branding.redirectUrlAfterLogout;
-            redirectToUrl = redirectToUrl || this.env.hostUrl.toString();
+        router.get("/logout", async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+            const logContext = LogContext.from({ user: req.user, request: req });
+            const clientInfo = getRequestingClientInfo(req);
+            const logPayload = { session: req.session, clientInfo };
 
-            const redirect = () => {
-                this.gitpodCookie.unsetCookie(res);
-                this.sessionHandlerProvider.clearSessionCookie(res, this.env);
-                res.redirect(redirectToUrl);
-            }
+            let redirectToUrl = this.getSafeReturnToParam(req) || branding.redirectUrlAfterLogout || this.env.hostUrl.toString();
+
             if (req.isAuthenticated()) {
                 req.logout();
             }
-            if (req.session) {
-                req.session.destroy(error => {
-                    if (error) {
-                        log.warn({ sessionId: req.sessionID }, "(Auth) Error on Logout.", { error, req });
-                    }
-                    redirect();
-                });
-            } else {
-                redirect();
+            try {
+                if (req.session) {
+                    await destroySession(req.session);
+                }
+            } catch (error) {
+                log.warn(logContext, "(Logout) Error on Logout.", { error, req, ...logPayload });
             }
+
+            // clear cookies
+            this.gitpodCookie.unsetCookie(res);
+            this.sessionHandlerProvider.clearSessionCookie(res, this.env);
+
+            // then redirect
+            log.info(logContext, "(Logout) Redirecting...", { redirectToUrl, ...logPayload });
+            res.redirect(redirectToUrl);
         });
         router.get("/refresh-login", async (req: express.Request, res: express.Response, next: express.NextFunction) => {
             if (!req.isAuthenticated() || !User.is(req.user)) {
@@ -235,74 +240,155 @@ export class UserController {
 
             res.sendStatus(403);
         });
-        router.get("/tos", async (req, res, next) => {
+        const isTosFlowInfo = (data: any) => VerifyResultWithIdentity.is(data) || VerifyResultWithUser.is(data);
+        router.get("/tos", async (req: express.Request, res: express.Response) => {
             const clientInfo = getRequestingClientInfo(req);
-            log.info({ sessionId: req.sessionID }, "(TOS) Redirecting to /tos. (Request to /login is expected next.)", { 'login-flow': true, clientInfo });
+            let tosFlowInfo = req.session!.tosFlowInfo;
+            const authBag = AuthFlow.get(req.session);
+            const isLogin = !!authBag;
+            const isUpdate = !VerifyResultWithIdentity.is(tosFlowInfo);
+
+            const logContext = LogContext.from({ user: req.user, request: req });
+            const logPayload = { session: req.session, clientInfo, tosFlowInfo, authBag };
+
+            const redirectOnInvalidSession = () => {
+                log.info(logContext, '(TOS) Invalid session. (/tos)', logPayload);
+                res.redirect(this.getSorryUrl("Oops! Something went wrong in the previous step."));
+            }
+
+            if (isLogin) {
+                if (!isTosFlowInfo(tosFlowInfo)) {
+                    redirectOnInvalidSession();
+                    return;
+                }
+
+                // in a special case of the signup process, we're redirecting to /tos even if not required.
+                if (!isUpdate && VerifyResultWithIdentity.is(tosFlowInfo) && tosFlowInfo.termsAcceptanceRequired === false) {
+                    log.info(logContext, '(TOS) Not required.', logPayload);
+                    await this.handleTosProceedForNewUser(req, res, authBag!, tosFlowInfo);
+                    return;
+                }
+            } else { // we are in tos update process
+
+                const user = User.is(req.user) ? req.user : undefined;
+                if (!user) {
+                    redirectOnInvalidSession();
+                    return;
+                }
+
+                // initializing flow here!
+                req.session!.tosFlowInfo = <VerifyResultWithUser>{
+                    user: User.censor(user),
+                    returnToUrl: req.query.returnTo
+                }
+            }
+
+            const tosHints = {
+                isUpdate // indicate whether to show the "we've updated ..." message
+            };
+            res.cookie("tosHints", JSON.stringify(tosHints), {
+                httpOnly: false, // we need this hin on frontend
+                domain: `${this.env.hostUrl.url.host}`
+            });
+
+            log.info(logContext, "(TOS) Redirecting to /tos.", { tosHints, ...logPayload });
             res.redirect(this.env.hostUrl.with(() => ({ pathname: '/tos/' })).toString());
         });
-        router.post("/tos/proceed", async (req, res, next) => {
+        router.post("/tos/proceed", async (req: express.Request, res: express.Response) => {
             const clientInfo = getRequestingClientInfo(req);
-            const dashboardUrl = this.env.hostUrl.asDashboard().toString();
-            if (req.isAuthenticated() && User.is(req.user)) {
-                res.redirect(dashboardUrl);
-                return;
-            }
-            const authBag = AuthBag.get(req.session);
-            if (!req.session || !authBag || authBag.requestType !== "authenticate" || !authBag.identity) {
-                log.info({ sessionId: req.sessionID }, '(TOS) No identity.', { 'login-flow': true, session: req.session, clientInfo });
+            const tosFlowInfo = req.session!.tosFlowInfo;
+            const authBag = AuthFlow.get(req.session);
+            const isLogin = !!authBag;
+
+            const logContext = LogContext.from({ user: req.user, request: req });
+            const logPayload = { session: req.session, clientInfo, tosFlowInfo, authBag };
+
+            const redirectOnInvalidSession = () => {
+                log.info(logContext, '(TOS) Invalid session. (/tos/proceed)', logPayload);
                 res.redirect(this.getSorryUrl("Oops! Something went wrong in the previous step."));
+            }
+
+            if (!isTosFlowInfo(tosFlowInfo)) {
+                redirectOnInvalidSession();
                 return;
             }
+
+            // just don't forget
+            res.clearCookie("tosHints");
+
             const agreeTOS = req.body.agreeTOS;
             if (!agreeTOS) {
-                /* The user did not accept our Terms of Service, thus we must not store any of their data.
-                 * For good measure we destroy the user session, so that any data we may have stored in there
-                 * gets removed from our session cache.
-                 */
-                log.info({ sessionId: req.sessionID }, '(TOS) User did NOT agree. Aborting sign-up.', { 'login-flow': true, clientInfo });
-                try {
-                    await destroySession(req.session)
-                } catch (error) {
-                    log.warn('(TOS) Unable to destroy session.', { error, 'login-flow': true, clientInfo });
+                // The user did not accept the terms.
+                // A redirect to /logout will wipe the session, which in case of a signup will ensure
+                // that no user data remains in the system.
+                log.info(logContext, '(TOS) User did NOT agree. Redirecting to /logout.', logPayload);
+
+                res.redirect(this.env.hostUrl.withApi({ pathname: "/logout" }).toString());
+                // todo@alex: consider redirecting to a description pages afterwards (returnTo param)
+
+                return;
+            }
+
+
+            // The user has accepted the terms.
+            log.info(logContext, '(TOS) User did agree.', logPayload);
+
+
+            if (VerifyResultWithIdentity.is(tosFlowInfo)) {
+                if (!authBag) {
+                    redirectOnInvalidSession();
+                    return;
                 }
-                res.redirect(dashboardUrl);
-                return;
+                await this.handleTosProceedForNewUser(req, res, authBag, tosFlowInfo, req.body);
+            }
+            if (VerifyResultWithUser.is(tosFlowInfo)) {
+                const { user, returnToUrl } = tosFlowInfo;
+
+                await this.userService.acceptCurrentTerms(user);
+
+                if (isLogin) {
+                    await this.loginCompletionHandler.complete(req, res, { ...tosFlowInfo });
+                } else {
+
+                    let returnTo = returnToUrl || this.env.hostUrl.asDashboard().toString();
+                    res.redirect(returnTo);
+                }
             }
 
-            // The user has accepted our Terms of Service. Create the identity/user in the database and repeat login.
-            log.info({ sessionId: req.sessionID }, '(TOS) User did agree. Creating new user in database', { 'login-flow': true, clientInfo });
-
-            const identity = authBag.identity;
-            await AuthBag.attach(req.session, { ...authBag, identity: undefined });
-            try {
-                await this.createUserAfterTosAgreement(identity, req.body);
-            } catch (error) {
-                log.error({ sessionId: req.sessionID }, '(TOS) Unable to create create the user in database.', error, { 'login-flow': true, error, clientInfo });
-                res.redirect(this.getSorryUrl("Oops! Something went wrong during the login."));
-                return;
-            }
-
-            // Make sure, the session is stored
-            try {
-                await saveSession(req);
-            } catch (error) {
-                log.error({ sessionId: req.sessionID }, `(TOS) Login failed due to session save error; redirecting to /sorry`, { req, error, clientInfo });
-                res.redirect(this.getSorryUrl("Login failed 🦄 Please try again"));
-                return;
-            }
-
-            // Continue with login after ToS
-            res.redirect(authBag.returnToAfterTos);
         });
 
         return router;
     }
-    protected async createUserAfterTosAgreement(identity: Identity, tosProceedParams: any) {
-        await this.userService.createUserForIdentity(identity);
+
+    protected async handleTosProceedForNewUser(req: express.Request, res: express.Response, authFlow: AuthFlow, tosFlowInfo: VerifyResultWithIdentity, tosProceedParams?: any) {
+        const { candidate, token } = tosFlowInfo;
+        const { returnToAfterTos, host } = authFlow;
+        const user = await this.userService.createUser({
+            identity: candidate,
+            token,
+            userUpdate: (user) => this.updateNewUserAfterTos(user, tosFlowInfo, tosProceedParams)
+        });
+
+        const { additionalIdentity, additionalToken, envVars } = tosFlowInfo;
+        if (additionalIdentity && additionalToken) {
+            await this.userService.updateUserIdentity(user, additionalIdentity, additionalToken);
+        }
+
+        // const { isBlocked } = tosFlowInfo; // todo@alex: this setting is in conflict with the env var
+
+        await this.userService.updateUserEnvVarsOnLogin(user, envVars);
+        await this.userService.acceptCurrentTerms(user);
+        await this.loginCompletionHandler.complete(req, res, { user, returnToUrl: returnToAfterTos, authHost: host });
+    }
+
+    protected updateNewUserAfterTos(newUser: User, tosFlowInfo: VerifyResultWithIdentity, tosProceedParams?: any) {
+        const { authUser } = tosFlowInfo;
+        newUser.name = authUser.name || authUser.primaryEmail;
+        newUser.avatarUrl = authUser.avatarUrl;
     }
 
     protected getSorryUrl(message: string) {
-        return this.env.hostUrl.with({ pathname: '/sorry', hash: message }).toString();
+        return this.env.hostUrl.asSorry(message).toString();
     }
 
     protected async augmentLoginRequest(req: express.Request) {
@@ -364,7 +450,7 @@ export class UserController {
     }
 
     protected getSafeReturnToParam(req: express.Request) {
-        const returnToURL: string | undefined = req.query.returnTo;
+        const returnToURL: string | undefined = req.query.redirect || req.query.returnTo;
         if (returnToURL) {
             const hostUrl = this.env.hostUrl.url as URL;
             if (returnToURL.toLowerCase().startsWith(`${hostUrl.protocol}//${hostUrl.host}`.toLowerCase())) {

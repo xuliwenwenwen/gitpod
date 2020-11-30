@@ -10,24 +10,35 @@ import { getSvgPath } from '../../withRoot';
 import AppBar from '@material-ui/core/AppBar';
 import Toolbar from '@material-ui/core/Toolbar';
 import Checkbox from '@material-ui/core/Checkbox';
+import Typography from '@material-ui/core/Typography';
 import { GitpodHostUrl } from '@gitpod/gitpod-protocol/lib/util/gitpod-host-url';
-import { log } from '@gitpod/gitpod-protocol/lib/util/logging';
-import { User } from "@gitpod/gitpod-protocol";
+import { Terms } from "@gitpod/gitpod-protocol";
 import { ButtonWithProgress } from "../button-with-progress";
+import * as Cookies from 'js-cookie';
+import { mdRenderer } from './terms-renderer';
 
-interface TermsOfServiceProps {
-    user: Promise<User>;
+export interface TermsOfServiceProps {
+    terms: Promise<Terms>;
 }
 interface TermsOfServiceState {
-    acceptsTos?: boolean;
+    isUpdate: boolean;
+    terms?: Terms;
+    acceptsTos: boolean;
 }
 export class TermsOfService extends React.Component<TermsOfServiceProps, TermsOfServiceState> {
+    protected gitpodHost = new GitpodHostUrl(window.location.href);
+
+    protected formRef: React.RefObject<HTMLFormElement>;
 
     constructor(props: TermsOfServiceProps) {
         super(props);
         this.state = {
-            acceptsTos: false,
+            isUpdate: false,
+            acceptsTos: false
         };
+        this.formRef = React.createRef();
+        this.handleSubmit = this.handleSubmit.bind(this);
+        this.onDecline = this.onDecline.bind(this);
     }
 
     componentWillMount() {
@@ -35,70 +46,93 @@ export class TermsOfService extends React.Component<TermsOfServiceProps, TermsOf
     }
 
     protected async onLoad(): Promise<void> {
-        try {
-            await this.props.user;
-            window.location.href = new GitpodHostUrl(window.location.toString()).asDashboard().toString();
-        } catch {
-            // ignore
-        }
+        const tosHints = Cookies.getJSON('tosHints');
+        this.setState({ isUpdate: tosHints?.isUpdate === true });
+        this.props.terms.then(terms => this.setState({ terms }));
     }
 
-	render() {
-        const gitpodHost = new GitpodHostUrl(window.location.href);
+    protected renderMd(md: string | undefined): string {
+        return mdRenderer.render(md || "");
+    }
 
-		// tslint:disable
-		return (
+    handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        this.doSubmit();
+    }
+    onDecline() {
+        this.setState({ acceptsTos: false }, () => this.doSubmit());
+    }
+    protected doSubmit() {
+        this.formRef.current!.submit();
+    }
+
+    protected actionUrl = this.gitpodHost.withApi({ pathname: '/tos/proceed' }).toString();
+    render() {
+        const content = this.renderMd(this.state.terms?.content);
+        const acceptsTos = this.state.acceptsTos;
+        const updateMessage = this.renderMd(this.state.terms?.updateMessage);
+        const update = this.state.isUpdate;
+
+        return (
             <div>
                 <AppBar position='static'>
                     <Toolbar className="content toolbar">
                         <div className="gitpod-logo">
-                            <a href={gitpodHost.toString()}>
+                            <a href={this.gitpodHost.toString()}>
                                 <img src={getSvgPath('/images/gitpod-ddd.svg')} alt="Gitpod Logo" className="logo" />
                             </a>
                         </div>
-                        <div style={{ flexGrow: 1 }}/>
+                        <div style={{ flexGrow: 1 }} />
                     </Toolbar>
                 </AppBar>
                 <div className='content content-area'>
-                    <h1>Before we proceed</h1>
-                    <form action={ gitpodHost.withApi({ pathname: '/tos/proceed' }).toString() } method="post" id="accept-tos-form">
+                    <h1>{update ? "Terms and Conditions Update" : "Before we proceed"}</h1>
+
+                    <form ref={this.formRef} action={this.actionUrl} method="post" id="accept-tos-form">
                         <div className="tos-checks">
-                            <p><label style={{ display: 'flex', alignItems: 'center' }}>
-                                <Checkbox
-                                    value="true"
-                                    name="agreeTOS"
-                                    checked={this.state.acceptsTos}
-                                    onChange={() => this.setState({ acceptsTos: !this.state.acceptsTos })} />
-                                <span>
-                                    I agree to the <a target="_blank" href="https://www.gitpod.io/self-hosted-terms/" rel="noopener">terms of service.</a>
+                            { update ? (
+                                <Typography dangerouslySetInnerHTML={{ __html: updateMessage }} />
+                            ) : (
+                                <Typography dangerouslySetInnerHTML={{ __html: content }} />
+                            ) }
+                            <p>
+                                <label style={{ display: 'flex', alignItems: 'center' }}>
+                                    <Checkbox
+                                        value="true"
+                                        name="agreeTOS"
+                                        checked={acceptsTos}
+                                        onChange={() => this.setState({ acceptsTos: !acceptsTos })} />
+                                    <span>
+                                        I accept the {update ? "new" : ""} terms and conditions.
                                 </span>
-                            </label></p>
+                                </label>
+                            </p>
                         </div>
                         <div className="tos-buttons" data-testid="tos">
                             <ButtonWithProgress
                                 className='button'
+                                type='submit'
                                 variant='outlined'
-                                disabled={!this.state.acceptsTos}
-                                color={this.state.acceptsTos ? 'secondary' : 'primary'}
-                                onClick={this.submitForm.bind(this)}
+                                color={'primary'}
+                                disabled={!acceptsTos}
                                 data-testid="submit">
-                                { this.state.acceptsTos ? 'Continue' : 'Please Accept the Terms Of Service' }
+                                {acceptsTos ? 'Continue' : 'Accept to Continue'}
                             </ButtonWithProgress>
+                            {update && (
+                                <ButtonWithProgress
+                                    className='button'
+                                    variant='text'
+                                    color={'secondary'}
+                                    onClick={this.onDecline}
+                                    data-testid="decline">
+                                    {'Decline'}
+                                </ButtonWithProgress>
+                            )}
                         </div>
                     </form>
                 </div>
             </div>
         );
-        // tslint:enable
     }
 
-    protected async submitForm() {
-        const form = document.getElementById('accept-tos-form');
-        if (!form) {
-            log.error('Form accept-tos-form not found');
-        } else {
-            (form as HTMLFormElement).submit();
-        }
-        return new Promise(() => {});
-    }
 }

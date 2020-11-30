@@ -22,18 +22,28 @@ import { ResponseError } from 'vscode-jsonrpc';
 import { WithBranding } from './with-branding';
 import { Context } from '../context';
 import { colors } from '../withRoot';
+import { ErrorCodes } from '@gitpod/gitpod-protocol/lib/messaging/error';
+import { ApplicationFrame } from './page-frame';
+import ShowUnauthorizedError from './show-unauthorized-error';
+import { ShowNoPrivateReposUpgrade } from './show-no-private-repos-upgrade';
+import { getBlockedUrl } from '../routing';
 
 interface StartWorkspaceState {
     workspace?: Workspace;
     workspaceInstance?: WorkspaceInstance;
-    errorMessage?: string;
-    errorCode?: number;
+    error?: StartWorkspaceError;
     buildLog?: WorkspaceBuildLog;
     headlessLog?: string;
     progress: number;
     startedInstanceId?: string;
     inTheiaAlready?: boolean;
     remainingUsageHours?: number;
+}
+
+export interface StartWorkspaceError {
+    message?: string;
+    code?: number;
+    data?: any;
 }
 
 export interface StartWorkspaceProps {
@@ -46,7 +56,7 @@ export interface StartWorkspaceProps {
 
     startErrorRenderer?: StartErrorRenderer;
 }
-export type StartErrorRenderer = (errorCode: number, service: GitpodService, onResolved: () => void) => JSX.Element | undefined;
+export type StartErrorRenderer = (error: any, service: GitpodService, onResolved: () => void) => JSX.Element | undefined;
 
 export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWorkspaceState> implements Partial<GitpodClient> {
     private process: StartupProcess;
@@ -119,7 +129,7 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
         }
         const state = this.state;
         if (state) {
-            if (!restart && (state.startedInstanceId || state.errorMessage)) {
+            if (!restart && (state.startedInstanceId || state.error)) {
                 // We stick with a started instance until we're explicitly told not to
                 return;
             }
@@ -136,7 +146,7 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
                     if (!this.runsInIFrame() && workspaceStartedResult.workspaceURL) {
                         this.redirectTo(workspaceStartedResult.workspaceURL);
                     }
-                    this.setState({ startedInstanceId: workspaceStartedResult.instanceID, errorMessage: undefined, errorCode: undefined });
+                    this.setState({ startedInstanceId: workspaceStartedResult.instanceID, error: undefined });
                     // Explicitly query state to guarantee we get at least one update
                     // (needed for already started workspaces, and not hanging in 'Starting ...' for too long)
                     this.props.service.server.getWorkspace(workspaceId).then(ws => {
@@ -150,23 +160,48 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
                 }
             })
             .catch(err => {
-                this.setErrorState(err, defaultErrMessage);
+                this.setErrorState(err);
                 console.error(err);
             });
     }
 
-    protected setErrorState(err: any, defaultErrorMessage?: string) {
-        let errorMessage = defaultErrorMessage;
-        let errorCode = undefined;
-        if (err instanceof ResponseError) {
-            errorCode = err.code;
+    protected setErrorState(err: any) {
+        if (err instanceof Error) {
+            if (err instanceof ResponseError) {
+                switch (err.code) {
+                    case ErrorCodes.USER_BLOCKED:
+                        window.location.href = getBlockedUrl();
+                        return;
+                    case ErrorCodes.SETUP_REQUIRED:
+                        window.location.href = new GitpodHostUrl(window.location.toString()).with({ pathname: "first-steps" }).toString();
+                        return;
+                    case ErrorCodes.USER_TERMS_ACCEPTANCE_REQUIRED:
+                        const thisUrl = window.location.toString();
+                        window.location.href = new GitpodHostUrl(thisUrl).withApi({ pathname: "/tos", search: `returnTo=${encodeURIComponent(thisUrl)}` }).toString();
+                        return;
+                    case ErrorCodes.NOT_AUTHENTICATED:
+                        if (err.data) {
+                            this.setState({ error: { message: err.toString(), data: err.data, code: err.code } });
+                        } else {
+                            const url = new GitpodHostUrl(window.location.toString()).withApi({
+                                pathname: '/login/',
+                                search: 'returnTo=' + encodeURIComponent(window.location.toString())
+                            }).toString();
+                            window.location.href = url;
+                        }
+                        return;
+                    default:
+                        this.setState({ error: { message: err.toString(), data: err.data, code: err.code } });
+                        return;
+                }
+            } else {
+                this.setState({ error: { message: err.toString() } });
+            }
+        } else if (typeof err === "string") {
+            this.setState({ error: { message: err } });
+        } else {
+            this.setState({ error: { message: "Error while starting workspace." } });
         }
-        if (err && err.message) {
-            errorMessage = err.message;
-        } else if (err && typeof err === 'string') {
-            errorMessage = err;
-        }
-        this.setState({ errorMessage, errorCode });
     }
 
     componentWillUnmount() {
@@ -244,10 +279,11 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
 
         this.process.setStage(workspaceInstance.status.phase);
 
+        const failed = workspaceInstance.status.conditions.failed;
+        const error = failed ? { message: failed } : undefined;
         this.setState({
             workspaceInstance,
-            errorMessage: workspaceInstance.status.conditions.failed,
-            errorCode: undefined
+            error
         });
     }
 
@@ -256,7 +292,7 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
             try {
                 const info = await this.props.service.server.getWorkspace(this.props.workspaceId);
                 this.workspace = info.workspace;
-                this.isHeadless = info.workspace.type != 'regular';
+                this.isHeadless = info.workspace.type !== 'regular';
                 this.isPrebuilt = WithPrebuild.is(info.workspace.context);
                 this.workspaceInfoReceived = true;
 
@@ -322,14 +358,48 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
         return window.top !== window.self;
     }
 
-    render() {
-        const errorCode = this.state && this.state.errorCode;
-
+    protected renderError() {
+        const { error } = this.state;
         const startErrorRenderer = this.props.startErrorRenderer;
-        if (startErrorRenderer && errorCode) {
-            const rendered = startErrorRenderer(errorCode, this.props.service, () => this.startWorkspace(this.props.workspaceId, true, false));
+        if (startErrorRenderer && error) {
+            const rendered = startErrorRenderer(error, this.props.service, () => this.startWorkspace(this.props.workspaceId, true, false));
             if (rendered) {
                 return rendered;
+            }
+        }
+        if (error?.code === ErrorCodes.SETUP_REQUIRED) {
+            return <ApplicationFrame />;
+        }
+        if (error?.code === ErrorCodes.USER_TERMS_ACCEPTANCE_REQUIRED) {
+            return <ApplicationFrame />;
+        }
+        if (error?.code === ErrorCodes.NOT_AUTHENTICATED) {
+            if (error?.data.host && error?.data.scopes && error?.data.messageHint) {
+                return (
+                    <ApplicationFrame service={this.props.service}>
+                        <ShowUnauthorizedError data={error?.data} />
+                    </ApplicationFrame>
+                );
+            }
+            console.log(error?.data);
+        }
+        if (error?.code === ErrorCodes.PLAN_DOES_NOT_ALLOW_PRIVATE_REPOS) {
+            return (
+                <ApplicationFrame service={this.props.service}>
+                    <ShowNoPrivateReposUpgrade />
+                </ApplicationFrame>
+            );
+        }
+        return undefined;
+    }
+
+    render() {
+        const { error } = this.state;
+
+        if (error) {
+            const handled = this.renderError();
+            if (handled) {
+                return handled;
             }
         }
 
@@ -421,14 +491,15 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
         // stopped status happens when the build failed. We still want to see the log output in that case
         const isBuildingWorkspaceImage = instance && (instance.status.phase === 'preparing' || instance.status.phase === 'stopped' && this.state.buildLog);
         const isHeadlessBuildRunning = this.isHeadless && instance && (instance.status.phase === 'running' || instance.status.phase === 'stopping');
-        let isError = this.state && !!this.state.errorMessage;
-        let errorMessage = this.state && this.state.errorMessage;
+        const isError = !!error?.message;
+        let cubeErrorMessage = error?.message;
+
         if (isBuildingWorkspaceImage) {
-            logs = <ShowWorkspaceBuildLogs buildLog={this.state.buildLog} errorMessage={errorMessage} showPhase={!isError} />;
-            errorMessage = ""; // errors will be shown in the output already
+            logs = <ShowWorkspaceBuildLogs buildLog={this.state.buildLog} errorMessage={error?.message} showPhase={!isError} />;
+            cubeErrorMessage = ""; // errors will be shown in the output already
         } else if (isHeadlessBuildRunning) {
             logs = <WorkspaceLogView content={this.state.headlessLog} />;
-            errorMessage = "";
+            cubeErrorMessage = "";
         }
 
         if (isError) {
@@ -445,9 +516,9 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
                 </div>;
             }
         }
-        if (this.state && this.state.workspaceInstance && this.state.workspaceInstance.status.phase == 'running') {
+        if (this.state && this.state.workspaceInstance && this.state.workspaceInstance.status.phase === 'running') {
             if (this.state.remainingUsageHours !== undefined && this.state.remainingUsageHours <= 0) {
-                errorMessage = 'You have run out of Gitpod Hours.';
+                cubeErrorMessage = 'You have run out of Gitpod Hours.';
                 message = <div className='message action'>
                     <Button className='button' variant='outlined' color='secondary' onClick={() =>
                         window.open(new GitpodHostUrl(window.location.toString()).asUpgradeSubscription().toString(), '_blank')
@@ -471,7 +542,7 @@ export class StartWorkspace extends React.Component<StartWorkspaceProps, StartWo
                 <Context.Consumer>
                     {(ctx) =>
                         <CubeFrame
-                            errorMessage={errorMessage}
+                            errorMessage={cubeErrorMessage}
                             errorMode={isError}
                             branding={ctx.branding}
                             stoppedAnimation={isStopped}>
