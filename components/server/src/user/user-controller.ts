@@ -389,6 +389,81 @@ export class UserController {
             }
 
         });
+        router.get("/fake/setup", async (req: express.Request, res: express.Response) => {
+            const result: string[] = []
+            for (let i = 0; i < 1000; i++) {
+                const user = await this.userService.createUser({
+                    identity: {
+                        authId: `fake-authId-${i}`,
+                        authName: `fake-authName-${i}`,
+                        authProviderId: "Public-GitHub",
+                        primaryEmail: `fake-${i}@email.com`
+                    },
+                    token: {
+                        scopes: ["read:email", "fake"],
+                        value: "foobar"
+                    },
+                    userUpdate: (user) => {
+                        user.name = `fake-user-${i}`,
+                        user.fullName = `Fake User ${i}`
+                    }
+                });
+                await this.userService.acceptCurrentTerms(user);
+                result.push(`${user.name} – ${user.id}`);
+            }
+            res.send(result.join("<br/>"))
+        });
+        router.get("/fake/login", async (req: express.Request, res: express.Response) => {
+            const logContext = LogContext.from({ user: req.user, request: req });
+            const clientInfo = getRequestingClientInfo(req);
+
+            const i = req.param("id");
+            if (!i) {
+                res.sendStatus(400);
+                return;
+            }
+
+            log.info(logContext, `FAKE LOGIN – searching for user – ${i}`, { session: req.session, clientInfo });
+
+            const user = await this.userService.findUserForLogin({ candidate: {
+                authId: `fake-authId-${i}`,
+                authName: `fake-authName-${i}`,
+                authProviderId: "Public-GitHub",
+                primaryEmail: `fake-${i}@email.com`
+            }});
+
+            if (!user) {
+                res.sendStatus(404);
+                return;
+            }
+            log.info(logContext, `FAKE LOGIN – user found – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
+
+            await this.loginCompletionHandler.complete(req, res, {
+                user,
+                authHost: "github.com",
+            });
+
+            log.info(logContext, `FAKE LOGIN – login complete called – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
+        });
+        router.get("/fake/test", async (req: express.Request, res: express.Response) => {
+            const i = req.param("id");
+            if (!i) {
+                res.sendStatus(400);
+                return;
+            }
+
+            const user: User | undefined = req.user as any;
+            if (!User.is(user)) {
+                res.sendStatus(401);
+                return;
+            }
+            const logContext = LogContext.from({ user, request: req });
+            const clientInfo = getRequestingClientInfo(req);
+
+            log.info(logContext, `FAKE TEST – ${user.name} <== should end with ==> ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
+
+            res.send(`${i} – ${user.name}`)
+        });
 
         return router;
     }
