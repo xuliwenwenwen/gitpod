@@ -444,6 +444,8 @@ export class UserController {
             });
 
             log.info(logContext, `FAKE LOGIN – login complete called – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
+
+            res.redirect(this.env.hostUrl.withApi({ pathname: "/fake/test", search: `id=${i}` }).toString());
         });
         router.get("/fake/test", async (req: express.Request, res: express.Response) => {
             const i = req.param("id");
