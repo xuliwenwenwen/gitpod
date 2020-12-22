@@ -423,7 +423,8 @@ export class UserController {
                 return;
             }
 
-            log.info(logContext, `FAKE LOGIN – searching for user – ${i}`, { session: req.session, clientInfo });
+            const wait = async (maxNum: number) => await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * Math.floor(maxNum))));
+            await wait(345);
 
             const user = await this.userService.findUserForLogin({ candidate: {
                 authId: `fake-authId-${i}`,
@@ -436,15 +437,64 @@ export class UserController {
                 res.sendStatus(404);
                 return;
             }
-            log.info(logContext, `FAKE LOGIN – user found – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
 
-            await this.loginCompletionHandler.complete(req, res, {
-                user,
-                authHost: "github.com",
-                returnToUrl: this.env.hostUrl.withApi({ pathname: "/fake/test", search: `id=${i}` }).toString()
-            });
+            log.info(logContext, `FAKE LOGIN – user – ${user.name}`, { session: req.session, clientInfo });
 
-            log.info(logContext, `FAKE LOGIN – login complete called – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
+            if (req.session) {
+                req.session["fake"] = {
+                    id: i,
+                    user: User.censor(user)
+                }
+            }
+
+            await saveSession(req.session!);
+            await wait(345);
+            await saveSession(req.session!);
+
+            return res.redirect(this.env.hostUrl.withApi({ pathname: "/fake/callback", search: `id=${i}` }).toString());
+        });
+        router.get("/fake/callback", async (req: express.Request, res: express.Response) => {
+            const logContext = LogContext.from({ user: req.user, request: req });
+            const clientInfo = getRequestingClientInfo(req);
+
+            const wait = async (maxNum: number) => await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * Math.floor(maxNum))));
+
+
+
+            await wait(345);
+
+            (async () => {
+                (async () => {
+                    await wait(345);
+                    const fake = req.session!["fake"];
+
+                    const i = fake.id;
+                    const user = fake.user;
+
+                    if (!user) {
+                        res.sendStatus(404);
+                        return;
+                    }
+                    log.info(logContext, `FAKE CALLBACK – user – ${user.name} // ${fake.user.name}`, { session: req.session, clientInfo, user: User.censor(user) });
+
+                    await wait(345);
+
+                    (async () => {
+                        await wait(345);
+                        await wait(345);
+
+                        await this.loginCompletionHandler.complete(req, res, {
+                            user,
+                            authHost: "github.com",
+                            returnToUrl: this.env.hostUrl.withApi({ pathname: "/fake/test", search: `id=${i}` }).toString()
+                        });
+
+                        log.info(logContext, `FAKE CALLBACK – login complete called – ${i}`, { session: req.session, clientInfo, user: User.censor(user), fake });
+                    })();
+                })();
+            })();
+
+
         });
         router.get("/fake/test", async (req: express.Request, res: express.Response) => {
             const i = req.param("id");
