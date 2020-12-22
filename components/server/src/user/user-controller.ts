@@ -441,11 +441,10 @@ export class UserController {
             await this.loginCompletionHandler.complete(req, res, {
                 user,
                 authHost: "github.com",
+                returnToUrl: this.env.hostUrl.withApi({ pathname: "/fake/test", search: `id=${i}` }).toString()
             });
 
             log.info(logContext, `FAKE LOGIN – login complete called – ${i}`, { session: req.session, clientInfo, user: User.censor(user) });
-
-            res.redirect(this.env.hostUrl.withApi({ pathname: "/fake/test", search: `id=${i}` }).toString());
         });
         router.get("/fake/test", async (req: express.Request, res: express.Response) => {
             const i = req.param("id");
