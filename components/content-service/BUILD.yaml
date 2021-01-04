@@ -12,12 +12,6 @@ packages:
       - "**"
     config:
       packaging: library
-  - name: test
-    type: docker
-    deps:
-    # - :app
-    config:
-      dockerfile: Dockerfile.unittest
   - name: app
     type: go
     deps:
@@ -37,7 +31,6 @@ packages:
     type: docker
     deps:
       - :app
-      - :test
     argdeps:
       - imageRepoBase
     config:
