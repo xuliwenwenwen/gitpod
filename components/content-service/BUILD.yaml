@@ -18,3 +18,29 @@ packages:
     # - :app
     config:
       dockerfile: Dockerfile.unittest
+  - name: app
+    type: go
+    deps:
+      - components/common-go:lib
+      - components/content-service-api/go:lib
+    srcs:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+    env:
+      - CGO_ENABLED=0
+      - GOOS=linux
+    config:
+      packaging: app
+      dontTest: true
+  - name: docker
+    type: docker
+    deps:
+      - :app
+      - :test
+    argdeps:
+      - imageRepoBase
+    config:
+      dockerfile: leeway.Dockerfile
+      image:
+        - ${imageRepoBase}/content-service:${version}

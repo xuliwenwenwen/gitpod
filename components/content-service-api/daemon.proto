@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package contentservice;
+
+option go_package = "github.com/gitpod-io/gitpod/content-service/api";
+
+service ContentService {
+    // HelloConttentService says Hello
+    rpc HelloContentService(HelloContentServiceRequest) returns (HelloContentServiceResponse){}
+}
+
+message HelloContentServiceRequest {
+    string name = 1;
+}
+
+message HelloContentServiceResponse {
+    string message = 1;
+}
