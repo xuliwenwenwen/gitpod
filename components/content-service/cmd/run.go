@@ -34,7 +34,7 @@ var runCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := getConfig()
 		reg := prometheus.NewRegistry()
-		dmn, err := daemon.NewDaemon()
+		dmn, err := daemon.NewDaemon(cfg.Storage)
 		if err != nil {
 			log.WithError(err).Fatal("cannot create daemon")
 		}

@@ -14,6 +14,8 @@ prometheus:
   address: ":{{ $comp.ports.metrics.containerPort }}"
 pprof:
   address: ":6060"
+storage:
+{{ toYaml $comp.remoteStorage | indent 2 }}
 {{ end }}
 {{ end }}
 

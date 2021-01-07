@@ -153,6 +153,14 @@ components:
       metrics:
         expose: false
         containerPort: 9500
+    remoteStorage:
+      kind: minio
+      minio:
+        endpoint: minio:9000
+        accessKey: EXAMPLEvalue
+        secretKey: Someone.Should/ReallyChangeThisKey!!
+        tmpdir: /tmp
+        region: local
 
   dbMigrations:
     enabled: true

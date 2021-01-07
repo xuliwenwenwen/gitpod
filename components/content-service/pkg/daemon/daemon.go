@@ -5,28 +5,56 @@
 package daemon
 
 import (
+	"context"
+
 	"github.com/gitpod-io/gitpod/content-service/api"
 	"github.com/gitpod-io/gitpod/content-service/pkg/service"
+	"github.com/gitpod-io/gitpod/content-service/pkg/storage"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
 // NewDaemon produces a new daemon
-func NewDaemon() (*Daemon, error) {
+func NewDaemon(strg storage.Config) (*Daemon, error) {
 	srv, err := service.NewContentService()
 	if err != nil {
 		return nil, xerrors.Errorf("cannot create content service: %w", err)
 	}
-	return &Daemon{srv}, nil
+	return &Daemon{srv, strg}, nil
 }
 
 // Daemon provides the content service
 type Daemon struct {
 	service *service.ContentService
+	strg    storage.Config
 }
 
 // Start runs all parts of the daemon until stop is called
 func (d *Daemon) Start() error {
+	return tmp(d.strg)
+}
+
+func tmp(strg storage.Config) error {
+	ctx := context.Background()
+	remoteStorage, err := storage.NewDirectAccess(&strg)
+	if err != nil {
+		return xerrors.Errorf("cannot use configured storage: %w", err)
+	}
+
+	err = remoteStorage.Init(ctx, "123", "abc")
+	if err != nil {
+		return xerrors.Errorf("cannot use configured storage: %w", err)
+	}
+
+	err = remoteStorage.EnsureExists(ctx)
+	if err != nil {
+		return xerrors.Errorf("cannot use configured storage: %w", err)
+	}
+
+	_, _, err = remoteStorage.Upload(ctx, "/config/config.json", "config.json")
+	if err != nil {
+		return xerrors.Errorf("cannot upload to configured storage: %w", err)
+	}
 	return nil
 }
 
