@@ -92,6 +92,9 @@ type DirectAccess interface {
 
 	// Upload takes all files from a local location and uploads it to the remote storage
 	Upload(ctx context.Context, source string, name string, options ...UploadOption) (bucket, obj string, err error)
+
+	// BlobStore do blob store related things (here: some tests)
+	BlobStore(ctx context.Context) (err error)
 }
 
 // UploadOptions configure remote storage upload

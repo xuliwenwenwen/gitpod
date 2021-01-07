@@ -58,6 +58,11 @@ func (rs *DirectNoopStorage) SnapshotObject(name string) string {
 	return ""
 }
 
+// BlobStore do blob store related things (here: some tests)
+func (rs *DirectNoopStorage) BlobStore(ctx context.Context) (err error) {
+	return nil
+}
+
 // PresignedNoopStorage does nothing
 type PresignedNoopStorage struct{}
 

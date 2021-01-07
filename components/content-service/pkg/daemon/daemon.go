@@ -55,6 +55,16 @@ func tmp(strg storage.Config) error {
 	if err != nil {
 		return xerrors.Errorf("cannot upload to configured storage: %w", err)
 	}
+
+	err = remoteStorage.BlobStore(ctx)
+	if err != nil {
+		return xerrors.Errorf("cannot do blobstore: %w", err)
+	}
+
+	_, _, err = remoteStorage.Upload(ctx, "/etc/hosts", "config.json")
+	if err != nil {
+		return xerrors.Errorf("cannot upload to configured storage (2): %w", err)
+	}
 	return nil
 }
 

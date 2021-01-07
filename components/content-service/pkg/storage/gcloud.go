@@ -668,6 +668,11 @@ func (rs *DirectGCPStorage) trailingObjectName(id string, t time.Time) string {
 	return fmt.Sprintf("%s%d-%s", rs.trailPrefix(), t.Unix(), id)
 }
 
+// BlobStore do blob store related things (here: some tests)
+func (rs *DirectGCPStorage) BlobStore(ctx context.Context) (err error) {
+	return nil
+}
+
 func newGCPClient(ctx context.Context, cfg GCPConfig) (*gcpstorage.Client, error) {
 	credfile := cfg.CredentialsFile
 	if tproot := os.Getenv("TELEPRESENCE_ROOT"); tproot != "" {
