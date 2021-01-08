@@ -6,7 +6,10 @@ package daemon
 
 import (
 	"context"
+	"io/ioutil"
+	"time"
 
+	"github.com/gitpod-io/gitpod/common-go/log"
 	"github.com/gitpod-io/gitpod/content-service/api"
 	"github.com/gitpod-io/gitpod/content-service/pkg/service"
 	"github.com/gitpod-io/gitpod/content-service/pkg/storage"
@@ -51,20 +54,95 @@ func tmp(strg storage.Config) error {
 		return xerrors.Errorf("cannot use configured storage: %w", err)
 	}
 
-	_, _, err = remoteStorage.Upload(ctx, "/config/config.json", "config.json")
+	_, _, err = remoteStorage.Upload(ctx, "/config/config.json", "testfile")
 	if err != nil {
 		return xerrors.Errorf("cannot upload to configured storage: %w", err)
 	}
 
-	err = remoteStorage.BlobStore(ctx)
+	err = remoteStorage.BlobStore(ctx, storage.BlobStoreActionOption{EnableVersioning: false, LogObjectStat: false})
 	if err != nil {
-		return xerrors.Errorf("cannot do blobstore: %w", err)
+		return xerrors.Errorf("cannot do blobstore (1): %w", err)
 	}
 
-	_, _, err = remoteStorage.Upload(ctx, "/etc/hosts", "config.json")
+	data := make([]byte, 1e+10) // 10 GB
+	err = ioutil.WriteFile("/tmp/testfile10gb", data, 0644)
 	if err != nil {
-		return xerrors.Errorf("cannot upload to configured storage (2): %w", err)
+		return xerrors.Errorf("error writing big file: %w", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan string, 1)
+
+	go func() {
+		start := time.Now()
+		log.Println("starting uploading big file")
+		_, _, err = remoteStorage.Upload(ctx, "/tmp/testfile10gb", "testfile")
+		if err != nil {
+			log.WithError(err).Errorf("error uploading big testfile")
+		} else {
+			elapsed := time.Since(start)
+			log.Printf("uploading testfile took %s", elapsed)
+		}
+
+		select {
+		default:
+			ch <- "done"
+		case <-ctx.Done():
+			log.Println("canceled by timeout")
+			return
+		}
+	}()
+
+	time.Sleep((time.Second))
+
+	log.Println("checking object")
+	err = remoteStorage.BlobStore(ctx, storage.BlobStoreActionOption{EnableVersioning: false, LogObjectStat: true})
+	if err != nil {
+		return xerrors.Errorf("cannot do blobstore (2): %w", err)
+	}
+
+	// os.Mkdir("/tmp/download1", os.ModePerm)
+	// found, err := remoteStorage.Download(ctx, "/tmp/download1", "testfile")
+	// if err != nil {
+	// 	return xerrors.Errorf("cannot download: %w", err)
+	// }
+	// if !found {
+	// 	return xerrors.Errorf("not found")
+	// }
+
+	select {
+	case <-ch:
+		log.Println("Read from ch")
+	case <-time.After(5 * time.Second):
+		log.Println("Timed out")
+	}
+
+	start := time.Now()
+	log.Println("starting uploading big file (2)")
+	_, _, err = remoteStorage.Upload(ctx, "/tmp/testfile10gb", "testfile")
+	if err != nil {
+		log.WithError(err).Errorf("error uploading big testfile (2)")
+	} else {
+		elapsed := time.Since(start)
+		log.Printf("uploading testfile (2) took %s", elapsed)
+	}
+
+	log.Println("checking object (2)")
+	err = remoteStorage.BlobStore(ctx, storage.BlobStoreActionOption{EnableVersioning: false, LogObjectStat: true})
+	if err != nil {
+		return xerrors.Errorf("cannot do blobstore (3): %w", err)
+	}
+
+	// os.Mkdir("/tmp/download2", os.ModePerm)
+	// found, err = remoteStorage.Download(ctx, "/tmp/download2", "testfile")
+	// if err != nil {
+	// 	return xerrors.Errorf("cannot download (2): %w", err)
+	// }
+	// if !found {
+	// 	return xerrors.Errorf("not found (2")
+	// }
+
 	return nil
 }
 

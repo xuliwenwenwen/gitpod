@@ -59,7 +59,7 @@ func (rs *DirectNoopStorage) SnapshotObject(name string) string {
 }
 
 // BlobStore do blob store related things (here: some tests)
-func (rs *DirectNoopStorage) BlobStore(ctx context.Context) (err error) {
+func (rs *DirectNoopStorage) BlobStore(ctx context.Context, opt BlobStoreActionOption) (err error) {
 	return nil
 }
 

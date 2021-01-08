@@ -263,13 +263,25 @@ func (rs *DirectMinIOStorage) objectName(name string) string {
 }
 
 // BlobStore do blob store related things (here: some tests)
-func (rs *DirectMinIOStorage) BlobStore(ctx context.Context) (err error) {
+func (rs *DirectMinIOStorage) BlobStore(ctx context.Context, opt BlobStoreActionOption) (err error) {
 	if rs.client == nil {
 		err = xerrors.Errorf("no minio client avialable - did you call Init()?")
 		return
 	}
 
-	err = rs.client.EnableVersioning(ctx, "gitpod-user-123")
+	if opt.EnableVersioning {
+		err = rs.client.EnableVersioning(ctx, "gitpod-user-123")
+		if err != nil {
+			return err
+		}
+	}
+	if opt.LogObjectStat {
+		info, err := rs.client.StatObject(ctx, "gitpod-user-123", "workspaces/abc/testfile", minio.StatObjectOptions{})
+		if err != nil {
+			return err
+		}
+		log.Printf("object stats: %#v\n", info)
+	}
 	return
 }
 

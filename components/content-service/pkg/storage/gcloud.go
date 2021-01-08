@@ -669,7 +669,7 @@ func (rs *DirectGCPStorage) trailingObjectName(id string, t time.Time) string {
 }
 
 // BlobStore do blob store related things (here: some tests)
-func (rs *DirectGCPStorage) BlobStore(ctx context.Context) (err error) {
+func (rs *DirectGCPStorage) BlobStore(ctx context.Context, opt BlobStoreActionOption) (err error) {
 	return nil
 }
 

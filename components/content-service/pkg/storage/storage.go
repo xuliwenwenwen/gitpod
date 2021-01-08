@@ -94,7 +94,13 @@ type DirectAccess interface {
 	Upload(ctx context.Context, source string, name string, options ...UploadOption) (bucket, obj string, err error)
 
 	// BlobStore do blob store related things (here: some tests)
-	BlobStore(ctx context.Context) (err error)
+	BlobStore(ctx context.Context, opt BlobStoreActionOption) (err error)
+}
+
+// BlobStoreActionOption has options for BlocStore
+type BlobStoreActionOption struct {
+	EnableVersioning bool
+	LogObjectStat    bool
 }
 
 // UploadOptions configure remote storage upload
