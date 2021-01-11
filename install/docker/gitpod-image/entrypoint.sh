@@ -190,6 +190,11 @@ installation_completed_hook() {
 installation_completed_hook &
 
 
+if [ "$REMOVE_NETWORKPOLICIES" = "true" ]; then
+    # Remove network policy, temporary fix for: https://github.com/gitpod-com/gitpod/issues/4483
+    rm /chart/templates/*networkpolicy*.yaml
+fi
+
 
 # start k3s
 /bin/k3s server --disable traefik --node-label "gitpod.io/main-node=true"
