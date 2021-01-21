@@ -37,6 +37,7 @@ async function build(context, version) {
     if (werftImg !== devImg) {
         werft.fail('prep', `Werft job image (${werftImg}) and Gitpod dev image (${devImg}) do not match`);
     }
+    exec("leeway version")
 
     let buildConfig = context.Annotations || {};
     try {
