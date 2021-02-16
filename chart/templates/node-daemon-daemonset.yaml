@@ -82,7 +82,7 @@ spec:
             cpu: 5m
             memory: 250Mi
       - name: node-init
-        image: alpine:3.7
+        image: {{ .Values.alpineImage | default "alpine:3.7" }}
         volumeMounts:
           - mountPath: /mnt/theia-storage
             name: theia-storage

@@ -233,8 +233,8 @@ func (m *Manager) createDefiniteWorkspacePod(startContext *startWorkspaceContext
 	// We're moving away from a fixed Theia image/version coupling and towards specifying a proper IDE image.
 	// Once we're exclusively using registry-facade, we won't need this label anymore.
 	var theiaVersion string
-	if s := strings.Split(req.Spec.IdeImage, ":"); len(s) == 2 {
-		theiaVersion = s[1]
+	if s := strings.Split(req.Spec.IdeImage, ":"); len(s) >= 2 {
+		theiaVersion = s[len(s)-1]
 	} else {
 		return nil, xerrors.Errorf("IDE image ref does not have a label")
 	}

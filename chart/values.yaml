@@ -23,6 +23,7 @@ certificatesSecret:
   secretName: https-certificates
 
 imagePrefix: gcr.io/gitpod-io/self-hosted/
+alpineImage: alpine:3.9
 installation:
   stage: production
   tenant: gitpod
