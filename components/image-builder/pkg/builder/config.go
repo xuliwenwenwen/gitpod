@@ -40,6 +40,10 @@ type Configuration struct {
 	// AlpineImage is the image that should be pulled for the selfbuild. It is a string that is used in a
 	// Dockerfile after FROM.
 	AlpineImage string `json:"alpineImage,omitempty"`
+
+	// SelfBuildBaseImage points to an image that is used as base image.
+	// Needs to be an alpine image that has `git bash openssh-client lz4 coreutils` installed.
+	SelfBuildBaseImage string `json:"selfBuildBaseImage,omitempty"`
 }
 
 // Validate validates the configuration

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/docker/docker/api/types"
 	docker "github.com/docker/docker/client"
@@ -22,15 +21,12 @@ import (
 )
 
 const (
-	selfbuildDockerfileTemplate = `
-FROM alpine
-
+	selfBuildDockerfileApkAdd = "RUN apk add --no-cache git bash openssh-client lz4 coreutils"
+	selfbuildDockerfileBottom = `
 # Add gitpod user for operations (e.g. checkout because of the post-checkout hook!)
 RUN addgroup -g 33333 gitpod \
     && adduser -D -h /home/gitpod -s /bin/sh -u 33333 -G gitpod gitpod \
     && echo "gitpod:gitpod" | chpasswd
-
-RUN apk add --no-cache git bash openssh-client lz4 coreutils
 
 COPY bob /bob
 COPY gitpodLayer.tar.gz /gitpodLayer.tar.gz
@@ -39,7 +35,7 @@ RUN mkdir /gitpod-layer && cd /gitpod-layer && tar xzfv /gitpodLayer.tar.gz
 )
 
 // SelfBuild builds the image of itself which the image builder requires to work
-func SelfBuild(ctx context.Context, rep, gitpodLayerLoc, alpineImage string, client *docker.Client) (ref string, err error) {
+func SelfBuild(ctx context.Context, rep, gitpodLayerLoc, baseImage, alpineImage string, client *docker.Client) (ref string, err error) {
 	rd, wr := io.Pipe()
 
 	gplayerhash, err := computeGitpodLayerHash(gitpodLayerLoc)
@@ -54,7 +50,7 @@ func SelfBuild(ctx context.Context, rep, gitpodLayerLoc, alpineImage string, cli
 
 	errchan := make(chan error)
 	go func() {
-		errchan <- writeSelfBuildContext(wr, gitpodLayerLoc, alpineImage)
+		errchan <- writeSelfBuildContext(wr, gitpodLayerLoc, baseImage, alpineImage)
 	}()
 
 	ref = fmt.Sprintf("%s:%s", rep, hash)
@@ -113,29 +109,29 @@ func computeGitpodLayerHash(gitpodLayerLoc string) (string, error) {
 func computeSelfbuildHash(gitpodLayerHash string) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return "", xerrors.Errorf("cannot compute selbuild hash: %w", err)
+		return "", xerrors.Errorf("cannot compute selfbuild hash: %w", err)
 	}
 	selfin, err := os.OpenFile(self, os.O_RDONLY, 0600)
 	if err != nil {
-		return "", xerrors.Errorf("cannot compute selbuild hash: %w", err)
+		return "", xerrors.Errorf("cannot compute selfbuild hash: %w", err)
 	}
 	defer selfin.Close()
 
 	hash := sha256.New()
 	_, err = io.Copy(hash, selfin)
 	if err != nil {
-		return "", xerrors.Errorf("cannot compute selbuild hash: %w", err)
+		return "", xerrors.Errorf("cannot compute selfbuild hash: %w", err)
 	}
 
 	_, err = fmt.Fprintf(hash, "\nbaseref=%s\n", gitpodLayerHash)
 	if err != nil {
-		return "", xerrors.Errorf("cannot compute selbuild hash: %w", err)
+		return "", xerrors.Errorf("cannot compute selfbuild hash: %w", err)
 	}
 
 	return fmt.Sprintf("%x", hash.Sum([]byte{})), nil
 }
 
-func writeSelfBuildContext(o io.WriteCloser, gitpodLayerLoc, alpineImage string) (err error) {
+func writeSelfBuildContext(o io.WriteCloser, gitpodLayerLoc, baseImage, alpineImage string) (err error) {
 	defer o.Close()
 
 	self, err := os.Executable()
@@ -195,7 +191,7 @@ func writeSelfBuildContext(o io.WriteCloser, gitpodLayerLoc, alpineImage string)
 		return xerrors.Errorf("cannot write selfbuild context: %w", err)
 	}
 
-	dockerfile := selfbuildDockerfile(alpineImage)
+	dockerfile := selfbuildDockerfile(baseImage, alpineImage)
 
 	err = arc.WriteHeader(&tar.Header{
 		Name: "Dockerfile",
@@ -215,9 +211,12 @@ func writeSelfBuildContext(o io.WriteCloser, gitpodLayerLoc, alpineImage string)
 	return nil
 }
 
-func selfbuildDockerfile(alpineImage string) string {
-	if len(alpineImage) > 0 {
-		return strings.Replace(selfbuildDockerfileTemplate, "alpine", alpineImage, 1)
+func selfbuildDockerfile(baseImage, alpineImage string) string {
+	if len(baseImage) > 0 {
+		return fmt.Sprintf("FROM %s\n%s", baseImage, selfbuildDockerfileBottom)
 	}
-	return selfbuildDockerfileTemplate
+	if len(alpineImage) > 0 {
+		return fmt.Sprintf("FROM %s\n%s\n%s", alpineImage, selfBuildDockerfileApkAdd, selfbuildDockerfileBottom)
+	}
+	return fmt.Sprintf("FROM alpine\n%s\n%s", selfBuildDockerfileApkAdd, selfbuildDockerfileBottom)
 }
