@@ -35,7 +35,7 @@ data:
                     "workdir": "/.supervisor/frontend"
                 }
             },
-            "allowAnyRepo": {{ $comp.allowAnyRepo | default "false" }}
+            "allowAnyRepo": {{ $comp.allowAnyRepo | default "false" }},
             "blobSpace": {
                 "location": "/mnt/cache/blobserve",
                 "maxSizeBytes": {{ $comp.maxCacheSize | default 1073741824 }}
