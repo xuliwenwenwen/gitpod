@@ -9,9 +9,11 @@ mount --make-rshared /
 
 
 BASEDOMAIN=${BASEDOMAIN:-}                          # Used as Gitpod domain, `gitpod.` prefix will be added.
-DOMAIN=${DOMAIN:-}                                  # Used as Gitpod ddomain as is.
+DOMAIN=${DOMAIN:-}                                  # Used as Gitpod domain as is.
 REMOVE_NETWORKPOLICIES=${REMOVE_NETWORKPOLICIES:-}  # Remove Gitpod network policies when set to 'true'.
 HELMIMAGE=${HELMIMAGE:-alpine/helm:3.2.4}           # Image that is used for the helm install.
+CERTS_DNS_PROVIDER=${CERTS_DNS_PROVIDER:-}
+LETS_ENCRYPT_EMAIL=${LETS_ENCRYPT_EMAIL:-}
 
 
 mkdir -p /values
@@ -77,17 +79,18 @@ if [ ! -z "$TCP_DNS_ADDR" ] && [ ! -z "$UDP_DNS_ADDR" ]; then
 fi
 
 
-# add HTTPS certs secret if certs are given in the folder /certs
-if [ -f /certs/chain.pem ] && [ -f /certs/dhparams.pem ] && [ -f /certs/fullchain.pem ] && [ -f /certs/privkey.pem ]; then
-    CHAIN=$(base64 --wrap=0 < /certs/chain.pem)
-    DHPARAMS=$(base64 --wrap=0 < /certs/dhparams.pem)
-    FULLCHAIN=$(base64 --wrap=0 < /certs/fullchain.pem)
-    PRIVKEY=$(base64 --wrap=0 < /certs/privkey.pem)
-    cat << EOF > /var/lib/rancher/k3s/server/manifests/proxy-config-certificates.yaml
+update_https_certificates_secret() {
+    # add HTTPS certs secret if certs are given in the folder /certs
+    if [ -f /certs/chain.pem ] && [ -f /certs/dhparams.pem ] && [ -f /certs/fullchain.pem ] && [ -f /certs/privkey.pem ]; then
+        CHAIN=$(base64 --wrap=0 < /certs/chain.pem)
+        DHPARAMS=$(base64 --wrap=0 < /certs/dhparams.pem)
+        FULLCHAIN=$(base64 --wrap=0 < /certs/fullchain.pem)
+        PRIVKEY=$(base64 --wrap=0 < /certs/privkey.pem)
+        cat << EOF > /var/lib/rancher/k3s/server/manifests/https-certificates.yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: proxy-config-certificates
+  name: https-certificates
   labels:
     app: gitpod
 data:
@@ -96,12 +99,55 @@ data:
   fullchain.pem: $FULLCHAIN
   privkey.pem: $PRIVKEY
 EOF
+    fi
+}
 
-    cat << EOF > /default_values/02_certificates_secret.yaml
-certificatesSecret:
-  secretName: proxy-config-certificates
-EOF
+
+if [ ! -z "$CERTS_DNS_PROVIDER" ] && [ ! -z "$LETS_ENCRYPT_EMAIL" ]; then
+
+    #if [ ! -f /certs/dhparams.pem ]; then
+    #    openssl dhparam -out /certs/dhparams.pem 2048
+    #fi
+    if [ ! -f /certs/chain.pem ]&& [ ! -f /certs/fullchain.pem ] && [ ! -f /certs/privkey.pem ]; then
+        echo "Getting HTTPS certs ..."
+        # lego --server=https://acme-staging-v02.api.letsencrypt.org/directory \
+        lego \
+            --email="$LETS_ENCRYPT_EMAIL" --accept-tos --dns="$CERTS_DNS_PROVIDER" -d "$DOMAIN" -d "*.$DOMAIN" -d "*.ws.$DOMAIN" run
+        cp ".lego/certificates/$DOMAIN.crt" /certs/fullchain.pem
+        cp ".lego/certificates/$DOMAIN.issuer.crt" /certs/chain.pem
+        cp ".lego/certificates/$DOMAIN.key" /certs/privkey.pem
+        echo "Getting HTTPS certs done."
+    fi
+    renew_certs() {
+        while true; do
+            sleep 1d
+            echo "Renewing HTTPS certs ..."
+            # lego --server=https://acme-staging-v02.api.letsencrypt.org/directory \
+            lego \
+                --email="$LETS_ENCRYPT_EMAIL" --accept-tos --dns="$CERTS_DNS_PROVIDER" -d "$DOMAIN" -d "*.$DOMAIN" -d "*.ws.$DOMAIN" renew \
+                --renew-hook="touch .renewed" \
+                
+            echo "Renewing HTTPS certs done."
+            if [ -f .renewed ]; then
+                echo "There are new HTTPS certs!"
+                rm .renewed
+                cp ".lego/certificates/$DOMAIN.crt" /certs/fullchain.pem
+                cp ".lego/certificates/$DOMAIN.issuer.crt" /certs/chain.pem
+                cp ".lego/certificates/$DOMAIN.key" /certs/privkey.pem
+                update_https_certificates_secret
+                sleep 10
+                kubectl rollout restart deployment/ws-proxy
+                kubectl rollout restart daemonset/registry-facade
+                kubectl rollout restart deployment/proxy
+            else
+                echo "No new HTTPS certs."
+            fi
+        done
+    }
+    renew_certs &
 fi
+
+update_https_certificates_secret
 
 
 # configure Gitpod for mygitpod.com domain

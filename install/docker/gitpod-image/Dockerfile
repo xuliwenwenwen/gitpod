@@ -9,6 +9,9 @@ RUN chmod +x /tini
 ADD https://github.com/mikefarah/yq/releases/download/3.3.2/yq_linux_amd64 /bin/yq
 RUN chmod +x /bin/yq
 
+ADD https://github.com/go-acme/lego/releases/download/v4.2.0/lego_v4.2.0_linux_amd64.tar.gz /lego.tar.gz
+RUN gunzip /lego.tar.gz && tar -xf /lego.tar && mv lego /bin/lego && rm CHANGELOG.md LICENSE
+
 VOLUME /var/gitpod/docker
 VOLUME /var/gitpod/docker-registry
 VOLUME /var/gitpod/minio
