@@ -68,4 +68,4 @@ packages:
     type: generic
     config:
       commands:
-        - ["sh", "-c", "curl -sfL https://go.kubebuilder.io/dl/2.3.1/linux/amd64 | tar -xz -C /tmp/ && sudo mkdir -p /usr/local/kubebuilder && sudo  mv /tmp/kubebuilder_2.3.1_linux_amd64/* /usr/local/kubebuilder"]
+        - ["sh", "-c", "curl -sfL https://go.kubebuilder.io/dl/2.3.1/linux/amd64 | tar -xz -C /tmp/ && sudo mkdir -p /usr/local/kubebuilder && sudo  mv /tmp/kubebuilder_2.3.1_linux_amd64/* /usr/local/kubebuilder;########"]
