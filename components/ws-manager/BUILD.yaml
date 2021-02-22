@@ -13,6 +13,7 @@ packages:
       - components/registry-facade-api/go:lib
       - components/ws-daemon-api/go:lib
       - components/ws-manager-api/go:lib
+      - components/ws-manager:kubebuilder-binaries
     env:
       - CGO_ENABLED=0
       - GOOS=linux
@@ -63,3 +64,8 @@ packages:
         # - ["sh", "-c", "./components-ws-manager--app/ws-manager --kubeconfig kubeconfig integration-test objs chart--helm/gitpod | kubectl --kubeconfig kubeconfig apply -f -"]
         # - ["components-ws-manager--app/_tests/manager.test", "-integration-test", "kubeconfig", "-test.run", "TestIntegration", "-test.v"]
         # - ["kubectl", "--kubeconfig", "kubeconfig", "delete", "namespace", "wsman-integration-${__pkg_version}"]
+  - name: kubebuilder-binaries
+    type: generic
+    config:
+      commands:
+        - ["sh", "-c", "curl -sfL https://go.kubebuilder.io/dl/2.3.1/linux/amd64 | tar -xz -C /tmp/ && sudo mkdir -p /usr/local/kubebuilder && sudo  mv /tmp/kubebuilder_2.3.1_linux_amd64/* /usr/local/kubebuilder"]
