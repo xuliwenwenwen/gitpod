@@ -272,7 +272,7 @@ func (m *Manager) StartWorkspace(ctx context.Context, req *api.StartWorkspaceReq
 			return nil, xerrors.Errorf("cannot create workspace's public service: %w", err)
 		}
 
-		err = m.Clientset.Create(ctx, portService)
+		err = m.Clientset.Create(ctx, &portService)
 		if err != nil {
 			clog.WithError(err).WithField("req", req).Error("was unable to start workspace")
 			// could not create ports service
@@ -634,13 +634,13 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 		return nil, xerrors.Errorf("workspace pod %s has no service prefix annotation", pod.Name)
 	}
 
-	var service *corev1.Service
+	var service corev1.Service
 	notifyStatusChange := func() error {
 		// by modifying the ports service we have changed the workspace status. However, this status change is not propagated
 		// through the regular monitor mechanism as we did not modify the pod itself. We have to send out a status update
 		// outselves. Doing it ourselves lets us synchronize the status update with probing for actual availability, not just
 		// the service modification in Kubernetes.
-		wso := workspaceObjects{Pod: pod, PortsService: service}
+		wso := workspaceObjects{Pod: pod, PortsService: &service}
 		err := m.completeWorkspaceObjects(ctx, &wso)
 		if err != nil {
 			return xerrors.Errorf("cannot update status: %w", err)
@@ -658,7 +658,7 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 	// dunno why in k8s IP ports are int32 not uint16
 	port := int32(req.Spec.Port)
 	// get ports service if it exists
-	err = m.Clientset.Get(ctx, types.NamespacedName{Namespace: m.Config.Namespace, Name: getPortsServiceName(servicePrefix)}, service)
+	err = m.Clientset.Get(ctx, types.NamespacedName{Namespace: m.Config.Namespace, Name: getPortsServiceName(servicePrefix)}, &service)
 	if isKubernetesObjNotFoundError(err) {
 		if !req.Expose {
 			// we're not asked to expose the port so there's nothing left to do here
@@ -671,7 +671,7 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 		if err != nil {
 			return nil, xerrors.Errorf("cannot create workspace's public service: %w", err)
 		}
-		err = m.Clientset.Create(ctx, service, &client.CreateOptions{})
+		err = m.Clientset.Create(ctx, &service, &client.CreateOptions{})
 		if err != nil {
 			return nil, xerrors.Errorf("cannot create service: %w", err)
 		}
@@ -713,7 +713,7 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 	}
 
 	// the service exists - let's modify it
-	spec := service.Spec
+	spec := &service.Spec
 	existingPortSpecIdx := -1
 	for i, p := range service.Spec.Ports {
 		if p.Port == port {
@@ -747,17 +747,16 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 	if len(spec.Ports) == 0 {
 		// we don't have any ports exposed anymore: remove the service
 		propagationPolicy := metav1.DeletePropagationForeground
-		err = m.Clientset.Delete(ctx, service, &client.DeleteOptions{
+		err = m.Clientset.Delete(ctx, &service, &client.DeleteOptions{
 			PropagationPolicy: &propagationPolicy,
 		})
 
 		m.ingressPortAllocator.FreeAllocatedPorts(service.Name)
 
-		service = nil
 		tracing.LogEvent(span, "port service deleted")
 	} else {
 		// we've made it here which means we need to actually patch the service
-		service.Spec = spec
+		service.Spec = *spec
 
 		// serialize allocated ports mapping
 		var portsToAllocate []int
@@ -792,14 +791,14 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 			service.Annotations[fmt.Sprintf("gitpod/port-url-%d", p.Port)] = url
 		}
 
-		err = m.Clientset.Update(ctx, service)
+		err = m.Clientset.Update(ctx, &service)
 		if err != nil {
 			return nil, xerrors.Errorf("cannot update service: %w", err)
 		}
 		tracing.LogEvent(span, "port service updated")
 	}
 	if err != nil {
-		return nil, xerrors.Errorf("cannot control port: %w", err)
+		return nil, xerrors.Errorf("cannot control port (2): %w", err)
 	}
 
 	err = notifyStatusChange()
