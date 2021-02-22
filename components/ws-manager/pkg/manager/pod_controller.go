@@ -42,22 +42,23 @@ type PodReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.Log.WithValues("pod", req.NamespacedName)
+	log := r.Log.WithValues("pod", req.NamespacedName)
 
-	var cfgmap corev1.ConfigMap
-	err := r.Client.Get(context.Background(), req.NamespacedName, &cfgmap)
+	var pod corev1.Pod
+	err := r.Client.Get(context.Background(), req.NamespacedName, &pod)
 	if errors.IsNotFound(err) {
+		log.Error(err, "pod not exist", "key", req)
 		return reconcile.Result{}, nil
 	}
 
-	queue := cfgmap.Annotations[workspaceIDAnnotation]
+	queue := pod.Annotations[workspaceIDAnnotation]
 	if queue == "" {
 		return ctrl.Result{}, nil
 	}
 
 	r.Monitor.eventpool.Add(queue, watch.Event{
 		Type:   watch.Modified,
-		Object: &cfgmap,
+		Object: &pod,
 	})
 
 	return ctrl.Result{}, nil
