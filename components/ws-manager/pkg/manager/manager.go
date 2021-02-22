@@ -615,10 +615,10 @@ func (m *Manager) markAllWorkspacesActive() error {
 }
 
 // ControlPort publicly exposes or un-exposes a network port for a workspace
-func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) (res *api.ControlPortResponse, err error) {
+func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) (*api.ControlPortResponse, error) {
 	span, ctx := tracing.FromContext(ctx, "ControlPort")
 	tracing.ApplyOWI(span, log.OWI("", "", req.Id))
-	defer tracing.FinishSpan(span, &err)
+	defer tracing.FinishSpan(span, nil)
 
 	pod, err := m.findWorkspacePod(ctx, req.Id)
 	if err != nil {
@@ -666,6 +666,7 @@ func (m *Manager) ControlPort(ctx context.Context, req *api.ControlPortRequest) 
 		}
 
 		// service does not exist - create it
+		var err error
 		service, err = m.createPortsService(req.Id, metaID, servicePrefix, []*api.PortSpec{req.Spec})
 		if err != nil {
 			return nil, xerrors.Errorf("cannot create workspace's public service: %w", err)
