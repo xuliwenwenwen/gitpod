@@ -54,9 +54,9 @@ var runCmd = &cobra.Command{
 		ctrl.SetLogger(logrusr.NewLogger(log.Log))
 
 		opts := ctrl.Options{
-			Scheme:                 scheme,
-			Namespace:              cfg.Manager.Namespace,
-			Port:                   9443,
+			Scheme:    scheme,
+			Namespace: cfg.Manager.Namespace,
+			//Port:                   9443,
 			HealthProbeBindAddress: ":0",
 			LeaderElection:         false,
 			LeaderElectionID:       "706fe79e.gitpod.io",
@@ -162,10 +162,16 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			log.WithError(err).Fatal("cannot start workspace monitor")
 		}
-		err = monitor.Start()
-		if err != nil {
-			log.WithError(err).Fatal("cannot start workspace monitor")
-		}
+
+		go func() {
+			// Monitor need to access local cache
+			time.Sleep(10 * time.Second)
+			err = monitor.Start()
+			if err != nil {
+				log.WithError(err).Fatal("cannot start workspace monitor")
+			}
+		}()
+
 		defer monitor.Stop()
 		log.Info("workspace monitor is up and running")
 
