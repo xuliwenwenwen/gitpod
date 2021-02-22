@@ -13,12 +13,14 @@ require (
 	github.com/alecthomas/jsonschema v0.0.0-20190504002508-159cbd5dba26
 	github.com/alecthomas/repr v0.0.0-20200325044227-4184120f674c
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
+	github.com/bombsimon/logrusr v1.0.0
 	github.com/gitpod-io/gitpod/common-go v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/content-service v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/content-service/api v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/registry-facade/api v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/ws-daemon/api v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/ws-manager/api v0.0.0-00010101000000-000000000000
+	github.com/go-logr/logr v0.3.0
 	github.com/go-ozzo/ozzo-validation v3.5.0+incompatible
 	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.3
@@ -37,6 +39,7 @@ require (
 	k8s.io/api v0.20.2
 	k8s.io/apimachinery v0.20.2
 	k8s.io/client-go v0.20.2
+	k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
 	sigs.k8s.io/controller-runtime v0.8.2
 	sigs.k8s.io/yaml v1.2.0
 )

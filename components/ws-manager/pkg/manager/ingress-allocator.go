@@ -96,7 +96,7 @@ type allocatedPort struct {
 //  a) an instance of ingressPortAllocatorImpl, or
 //  b) an instance of dummyIngressPortAllocator,
 // depending on whether or not the passed config is actuall present
-func NewIngressPortAllocator(config *IngressPortAllocatorConfig, clientset kubernetes.Interface, namespace string, wsPortURLTmpl string, gitpodHostURL string) (IngressPortAllocator, error) {
+func NewIngressPortAllocator(config *IngressPortAllocatorConfig, client kubernetes.Interface, namespace string, wsPortURLTmpl string, gitpodHostURL string) (IngressPortAllocator, error) {
 	if config == nil {
 		return &noopIngressPortAllocator{}, nil
 	}
@@ -106,7 +106,7 @@ func NewIngressPortAllocator(config *IngressPortAllocatorConfig, clientset kuber
 		WorkspacePortURLTemplate: wsPortURLTmpl,
 		GitpodHostURL:            gitpodHostURL,
 
-		clientset: clientset,
+		clientset: client,
 		namespace: namespace,
 
 		services:       make(map[string]allocatedPorts),
