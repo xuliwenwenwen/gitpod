@@ -113,7 +113,7 @@ const (
 
 // New creates a new workspace manager
 func New(config Configuration, client client.Client, rawClient kubernetes.Interface, cp *layer.Provider) (*Manager, error) {
-	ingressPortAllocator, err := NewIngressPortAllocator(config.IngressPortAllocator, rawClient, config.Namespace, config.WorkspacePortURLTemplate, config.GitpodHostURL)
+	ingressPortAllocator, err := NewIngressPortAllocator(config.IngressPortAllocator, client, config.Namespace, config.WorkspacePortURLTemplate, config.GitpodHostURL)
 	if err != nil {
 		return nil, xerrors.Errorf("error initializing IngressPortAllocator: %w", err)
 	}
